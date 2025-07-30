@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
 
-const Slip = require('../models/slip');  
+const Slip = require('../models/slips');  
 
 
 router.post('/', async (req, res) => {

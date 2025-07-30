@@ -32,4 +32,4 @@ const slipSchema = new mongoose.Schema({
   totalAmount: Number
 });
 
-module.exports = mongoose.model('Slip', slipSchema);
+  module.exports = mongoose.model('slips', slipSchema);
