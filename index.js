@@ -14,7 +14,7 @@ console.log('MONGO_URI from .env:', process.env.MONGO_URI);
 
 mongoose.connect(process.env.MONGO_URI)
   .then(() => console.log("✅ MongoDB Atlas connected"))
-  .catch((err) => console.error("❌ Connection failed:", err.message));
+  .catch((err) => console.error(" Connection failed:", err.message));
 
 app.use('/api/items', require('./routes/item'));
 app.use('/api/slips', require('./routes/slips'));
