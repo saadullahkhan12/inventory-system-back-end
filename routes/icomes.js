@@ -2,7 +2,6 @@ const express = require('express');
 const router = express.Router();
 const Icome = require('../models/Icomes');
 
-// Create new income record
 router.post('/', async (req, res) => {
   try {
     const { totalIncome, productsSold, date } = req.body;
