@@ -1,49 +1,29 @@
-const express = require('express');
-const router = express.Router();
-
-const Slip = require('../models/slips');
-const Item = require('../models/items'); // ✅ Import Item model
-
-// Create new slip
+// Update the POST route to match frontend data
 router.post('/', async (req, res) => {
   try {
     const { customerName, paymentType, items } = req.body;
 
-    // Get prices from inventory automatically
-    const populatedItems = await Promise.all(
-      items.map(async (slipItem) => {
-        const itemFromDB = await Item.findById(slipItem._id);
-        if (!itemFromDB) throw new Error(`Item not found: ${slipItem._id}`);
+    // Calculate totals from the items sent by frontend
+    const totalQuantity = items.reduce((sum, item) => sum + item.quantity, 0);
+    const totalAmount = items.reduce((sum, item) => sum + item.total, 0);
 
-        return {
-          itemName: itemFromDB.name, // ✅ match your slip schema
-          quantity: slipItem.quantity,
-          price: itemFromDB.price,
-          total: itemFromDB.price * slipItem.quantity
-        };
-      })
-    );
-
-    // Calculate totals
-    const totalQuantity = populatedItems.reduce((sum, i) => sum + i.quantity, 0);
-    const totalAmount = populatedItems.reduce((sum, i) => sum + i.total, 0);
-
-    // Create slip
+    // Create slip with the data from frontend
     const newSlip = new Slip({
       customerName,
       paymentType,
-      items: populatedItems,
+      items, // Use the items directly from fro
       totalQuantity,
       totalAmount
     });
 
     await newSlip.save();
 
-    // ✅ Update inventory stock
+    // Update inventory - we need to find items by name instead of ID
     for (let slipItem of items) {
-      await Item.findByIdAndUpdate(slipItem._id, {
-        $inc: { quantity: -slipItem.quantity }
-      });
+      await Item.findOneAndUpdate(
+        { name: slipItem.itemName },
+        { $inc: { quantity: -slipItem.quantity } }
+      );
     }
 
     res.status(201).json(newSlip);
@@ -52,16 +32,3 @@ router.post('/', async (req, res) => {
     res.status(500).json({ error: 'Server error', details: error.message });
   }
 });
-
-// Get all slips
-router.get('/', async (req, res) => {
-  try {
-    const slips = await Slip.find().sort({ date: -1 });
-    res.json(slips);
-  } catch (error) {
-    console.error(error.message);
-    res.status(500).send('Server Error');
-  }
-});
-
-module.exports = router;
