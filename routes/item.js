@@ -15,7 +15,7 @@ router.get('/', async (req, res) => {
 
 
 // Add item
-// Add item (with stock update if exists)
+// Add item (with stock update if exists) 
 router.post('/', async (req, res) => {
   try {
     const { name, sku, category, quantity, price } = req.body;
