@@ -4,35 +4,21 @@ const Slip = require('../models/slips');
 const Item = require('../models/items');
 const Income = require('../models/income');
 
-// GET /api/slips - Get all slips with pagination and filtering
+// GET all slips
 router.get('/', async (req, res) => {
   try {
-    const { 
-      page = 1, 
-      limit = 20, 
-      startDate, 
-      endDate, 
-      status = '',
-      paymentMethod = ''
-    } = req.query;
+    const { page = 1, limit = 20, startDate, endDate, status = '' } = req.query;
 
     const filter = {};
-    
-    // Date filter
+
     if (startDate || endDate) {
       filter.createdAt = {};
       if (startDate) filter.createdAt.$gte = new Date(startDate);
       if (endDate) filter.createdAt.$lte = new Date(endDate);
     }
 
-    // Status filter
     if (status) {
       filter.status = status;
-    }
-
-    // Payment method filter
-    if (paymentMethod) {
-      filter.paymentMethod = paymentMethod;
     }
 
     const slips = await Slip.find(filter)
@@ -48,102 +34,53 @@ router.get('/', async (req, res) => {
       currentPage: parseInt(page),
       totalSlips: total
     });
+
   } catch (err) {
     console.error('❌ Error fetching slips:', err);
-    res.status(500).json({ 
-      error: 'Failed to fetch slips', 
-      details: err.message 
-    });
+    res.status(500).json({ error: 'Failed to fetch slips', details: err.message });
   }
 });
 
-// GET /api/slips/:id - Get slip by ID
+// GET slip by ID
 router.get('/:id', async (req, res) => {
   try {
     const slip = await Slip.findById(req.params.id);
-    
-    if (!slip) {
-      return res.status(404).json({ error: 'Slip not found' });
-    }
+    if (!slip) return res.status(404).json({ error: 'Slip not found' });
 
     res.json(slip);
+
   } catch (err) {
-    console.error('❌ Error fetching slip:', err);
-    
     if (err.name === 'CastError') {
       return res.status(400).json({ error: 'Invalid slip ID format' });
     }
-    
-    res.status(500).json({ 
-      error: 'Failed to fetch slip', 
-      details: err.message 
-    });
+
+    res.status(500).json({ error: 'Failed to fetch slip', details: err.message });
   }
 });
 
-// POST /api/slips - Create slip and update inventory
+// CREATE slip + update inventory
 router.post('/', async (req, res) => {
   const session = await Slip.startSession();
   session.startTransaction();
 
   try {
-    console.log('📩 Creating new slip...');
+    const { customerName, subtotal, totalAmount, products } = req.body;
 
-    const {
-      customerName,
-      customerPhone,
-      customerEmail,
-      subtotal,
-      tax,
-      discount,
-      totalAmount,
-      paymentMethod,
-      notes,
-      products
-    } = req.body;
-
-    // Validate required fields
-    if (!products || !Array.isArray(products) || products.length === 0) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ 
-        error: 'Products array is required and cannot be empty' 
-      });
+    if (!products || products.length === 0) {
+      return res.status(400).json({ error: 'Products cannot be empty' });
     }
 
-    if (subtotal === undefined || totalAmount === undefined) {
-      await session.abortTransaction();
-      session.endSession();
-      return res.status(400).json({ 
-        error: 'Subtotal and total amount are required' 
-      });
+    if (subtotal == null || totalAmount == null) {
+      return res.status(400).json({ error: 'Subtotal and totalAmount required' });
     }
 
-    // Validate products and check stock
     const productUpdates = [];
-    
-    for (const product of products) {
-      const productName = product.productName || product.itemName;
-      const quantity = product.quantity;
-      const unitPrice = product.unitPrice ?? product.price;
 
-      if (!productName || quantity == null || unitPrice == null) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          error: 'Each product must include name, quantity, and unit price' 
-        });
-      }
+    for (const p of products) {
+      const productName = p.productName || p.itemName;
+      const quantity = p.quantity;
+      const unitPrice = p.unitPrice ?? p.price;
 
-      if (quantity <= 0) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          error: 'Product quantity must be greater than 0' 
-        });
-      }
-
-      // Find item in inventory to check stock
       const inventoryItem = await Item.findOne({
         $or: [
           { name: { $regex: new RegExp(productName, 'i') } },
@@ -153,179 +90,230 @@ router.post('/', async (req, res) => {
       }).session(session);
 
       if (!inventoryItem) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          error: `Product "${productName}" not found in inventory` 
-        });
+        return res.status(400).json({ error: `Product '${productName}' not found in inventory` });
       }
 
       if (inventoryItem.quantity < quantity) {
-        await session.abortTransaction();
-        session.endSession();
-        return res.status(400).json({ 
-          error: `Insufficient stock for "${productName}". Available: ${inventoryItem.quantity}, Requested: ${quantity}` 
+        return res.status(400).json({
+          error: `Insufficient stock for '${productName}'. Available: ${inventoryItem.quantity}`
         });
       }
 
-      // Prepare inventory update
       productUpdates.push({
         itemId: inventoryItem._id,
-        quantity: quantity,
-        currentStock: inventoryItem.quantity
+        quantity
       });
     }
 
-    // Create slip
+    // create slip
     const newSlip = new Slip({
       customerName: customerName || 'Walk-in Customer',
-      customerPhone: customerPhone || '',
-      customerEmail: customerEmail || '',
       products: products.map(p => ({
         productName: p.productName || p.itemName,
         quantity: p.quantity,
         unitPrice: p.unitPrice ?? p.price,
-        totalPrice: (p.quantity * (p.unitPrice ?? p.price))
+        totalPrice: p.quantity * (p.unitPrice ?? p.price)
       })),
-      subtotal: subtotal || 0,
-      tax: tax || 0,
-      discount: discount || 0,
-      totalAmount: totalAmount || 0,
-      paymentMethod: paymentMethod || 'Cash',
-      notes: notes || '',
+      subtotal,
+      totalAmount,
       status: 'Paid'
     });
 
-    // Update inventory quantities
+    // reduce stock
     for (const update of productUpdates) {
       await Item.findByIdAndUpdate(
         update.itemId,
-        { 
-          $inc: { quantity: -update.quantity },
-          lastUpdated: new Date()
-        },
+        { $inc: { quantity: -update.quantity }, lastUpdated: new Date() },
         { session }
       );
     }
 
-    // Create income record
+    // income record
     const incomeRecord = new Income({
       date: new Date(),
       totalIncome: totalAmount,
-      productsSold: products.map(p => ({
-        productName: p.productName || p.itemName,
-        quantity: p.quantity,
-        unitPrice: p.unitPrice ?? p.price,
-        totalPrice: (p.quantity * (p.unitPrice ?? p.price)),
-        category: 'Sale'
-      })),
-      customerName: customerName || 'Walk-in Customer',
-      paymentMethod: paymentMethod || 'Cash',
+      productsSold: newSlip.products,
+      customerName: newSlip.customerName,
       slipNumber: newSlip.slipNumber,
       notes: `Sale from slip ${newSlip.slipNumber}`
     });
 
-    // Save all documents
     await newSlip.save({ session });
     await incomeRecord.save({ session });
-    
-    // Commit transaction
+
     await session.commitTransaction();
     session.endSession();
 
-    console.log('✅ Slip created successfully:', newSlip._id);
-
     res.status(201).json({
-      message: 'Slip created successfully and inventory updated',
-      slip: newSlip,
-      incomeRecord: incomeRecord
+      message: 'Slip created successfully',
+      slip: newSlip
     });
 
   } catch (err) {
     await session.abortTransaction();
     session.endSession();
-    
-    console.error('❌ Error creating slip:', err);
-    
-    if (err.code === 11000) {
-      return res.status(400).json({ error: 'Slip number already exists' });
-    }
-    
-    res.status(500).json({
-      error: 'Failed to create slip',
-      details: err.message
-    });
+
+    res.status(500).json({ error: 'Failed to create slip', details: err.message });
   }
 });
 
-// PUT /api/slips/:id - Update slip
+// UPDATE slip with inventory adjustment
 router.put('/:id', async (req, res) => {
+  const session = await Slip.startSession();
+  session.startTransaction();
+
   try {
-    const {
-      customerName,
+    const existingSlip = await Slip.findById(req.params.id).session(session);
+    if (!existingSlip) {
+      await session.abortTransaction();
+      session.endSession();
+      return res.status(404).json({ error: 'Slip not found' });
+    }
+
+    const { 
+      customerName, 
       customerPhone,
-      customerEmail,
-      subtotal,
-      tax,
-      discount,
-      totalAmount,
       paymentMethod,
       notes,
-      status
+      products,
+      subtotal, 
+      totalAmount, 
+      tax,
+      discount,
+      status 
     } = req.body;
+
+    // If products are being updated, adjust inventory
+    if (products && Array.isArray(products)) {
+      // First, restore original quantities to inventory
+      if (existingSlip.products && existingSlip.products.length > 0) {
+        for (const oldProduct of existingSlip.products) {
+          const productName = oldProduct.productName;
+          const oldQuantity = oldProduct.quantity;
+
+          const inventoryItem = await Item.findOne({
+            $or: [
+              { name: { $regex: new RegExp(productName, 'i') } },
+              { sku: { $regex: new RegExp(productName, 'i') } }
+            ],
+            isActive: true
+          }).session(session);
+
+          if (inventoryItem) {
+            // Restore the old quantity
+            await Item.findByIdAndUpdate(
+              inventoryItem._id,
+              { $inc: { quantity: oldQuantity }, lastUpdated: new Date() },
+              { session }
+            );
+          }
+        }
+      }
+
+      // Now, validate and reduce inventory for new quantities
+      const productUpdates = [];
+      for (const p of products) {
+        const productName = p.productName || p.itemName;
+        const quantity = p.quantity;
+
+        if (!productName || !quantity || quantity <= 0) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({ error: 'Invalid product data' });
+        }
+
+        const inventoryItem = await Item.findOne({
+          $or: [
+            { name: { $regex: new RegExp(productName, 'i') } },
+            { sku: { $regex: new RegExp(productName, 'i') } }
+          ],
+          isActive: true
+        }).session(session);
+
+        if (!inventoryItem) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({ error: `Product '${productName}' not found in inventory` });
+        }
+
+        // Check if we have enough stock (considering we already restored old quantity)
+        const currentStock = inventoryItem.quantity;
+        if (currentStock < quantity) {
+          await session.abortTransaction();
+          session.endSession();
+          return res.status(400).json({
+            error: `Insufficient stock for '${productName}'. Available: ${currentStock}`
+          });
+        }
+
+        productUpdates.push({
+          itemId: inventoryItem._id,
+          quantity
+        });
+      }
+
+      // Reduce stock for new quantities
+      for (const update of productUpdates) {
+        await Item.findByIdAndUpdate(
+          update.itemId,
+          { $inc: { quantity: -update.quantity }, lastUpdated: new Date() },
+          { session }
+        );
+      }
+    }
+
+    // Update slip with all fields
+    const updateData = {};
+    if (customerName !== undefined) updateData.customerName = customerName;
+    if (customerPhone !== undefined) updateData.customerPhone = customerPhone;
+    if (paymentMethod !== undefined) updateData.paymentMethod = paymentMethod;
+    if (notes !== undefined) updateData.notes = notes;
+    if (subtotal !== undefined) updateData.subtotal = subtotal;
+    if (totalAmount !== undefined) updateData.totalAmount = totalAmount;
+    if (tax !== undefined) updateData.tax = tax;
+    if (discount !== undefined) updateData.discount = discount;
+    if (status !== undefined) updateData.status = status;
+    if (products !== undefined) {
+      updateData.products = products.map(p => ({
+        productName: p.productName || p.itemName,
+        quantity: p.quantity,
+        unitPrice: p.unitPrice ?? p.price,
+        totalPrice: p.totalPrice || (p.quantity * (p.unitPrice ?? p.price))
+      }));
+    }
+    if (status === 'Cancelled' && !existingSlip.cancelledAt) {
+      updateData.cancelledAt = new Date();
+    }
 
     const updatedSlip = await Slip.findByIdAndUpdate(
       req.params.id,
-      {
-        customerName,
-        customerPhone,
-        customerEmail,
-        subtotal,
-        tax,
-        discount,
-        totalAmount,
-        paymentMethod,
-        notes,
-        status
-      },
-      { new: true, runValidators: true }
+      updateData,
+      { new: true, runValidators: true, session }
     );
 
-    if (!updatedSlip) {
-      return res.status(404).json({ error: 'Slip not found' });
-    }
+    await session.commitTransaction();
+    session.endSession();
 
-    res.json({
-      message: 'Slip updated successfully',
-      slip: updatedSlip
-    });
+    res.json({ message: 'Slip updated successfully', slip: updatedSlip });
+
   } catch (err) {
+    await session.abortTransaction();
+    session.endSession();
     console.error('❌ Error updating slip:', err);
-    res.status(500).json({
-      error: 'Failed to update slip',
-      details: err.message
-    });
+    res.status(500).json({ error: 'Failed to update slip', details: err.message });
   }
 });
 
-// DELETE /api/slips/:id - Delete slip
+// DELETE slip
 router.delete('/:id', async (req, res) => {
   try {
     const deletedSlip = await Slip.findByIdAndDelete(req.params.id);
-    
-    if (!deletedSlip) {
-      return res.status(404).json({ error: 'Slip not found' });
-    }
+    if (!deletedSlip) return res.status(404).json({ error: 'Slip not found' });
 
-    res.json({ 
-      message: 'Slip deleted successfully' 
-    });
+    res.json({ message: 'Slip deleted successfully' });
+
   } catch (err) {
-    console.error('❌ Error deleting slip:', err);
-    res.status(500).json({
-      error: 'Failed to delete slip',
-      details: err.message
-    });
+    res.status(500).json({ error: 'Failed to delete slip', details: err.message });
   }
 });
 
