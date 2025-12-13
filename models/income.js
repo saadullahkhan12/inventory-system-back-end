@@ -62,7 +62,14 @@ const IncomeSchema = new mongoose.Schema({
   slipNumber: {
     type: String,
     default: '',
-    trim: true
+    trim: true,
+    index: true
+  },
+  slipId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Slip',
+    default: null,
+    index: true
   },
   isActive: {
     type: Boolean,

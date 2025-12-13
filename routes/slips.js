@@ -128,17 +128,20 @@ router.post('/', async (req, res) => {
       );
     }
 
-    // income record
+    await newSlip.save({ session });
+
+    // income record with slipId reference
     const incomeRecord = new Income({
       date: new Date(),
       totalIncome: totalAmount,
       productsSold: newSlip.products,
       customerName: newSlip.customerName,
+      paymentMethod: newSlip.paymentMethod || 'Cash',
       slipNumber: newSlip.slipNumber,
+      slipId: newSlip._id,
       notes: `Sale from slip ${newSlip.slipNumber}`
     });
 
-    await newSlip.save({ session });
     await incomeRecord.save({ session });
 
     await session.commitTransaction();
@@ -283,6 +286,47 @@ router.put('/:id', async (req, res) => {
     }
     if (status === 'Cancelled' && !existingSlip.cancelledAt) {
       updateData.cancelledAt = new Date();
+      
+      // Mark related income as inactive
+      await Income.updateMany(
+        { 
+          $or: [
+            { slipId: existingSlip._id },
+            { slipNumber: existingSlip.slipNumber }
+          ],
+          isActive: true
+        },
+        { 
+          isActive: false,
+          notes: `Cancelled - ${existingSlip.slipNumber || existingSlip._id}`
+        },
+        { session }
+      );
+
+      // Restore inventory quantities for cancelled slip
+      if (existingSlip.products && existingSlip.products.length > 0) {
+        for (const product of existingSlip.products) {
+          const productName = product.productName;
+          const quantity = product.quantity;
+
+          const inventoryItem = await Item.findOne({
+            $or: [
+              { name: { $regex: new RegExp(productName, 'i') } },
+              { sku: { $regex: new RegExp(productName, 'i') } }
+            ],
+            isActive: true
+          }).session(session);
+
+          if (inventoryItem) {
+            // Restore the quantity back to inventory
+            await Item.findByIdAndUpdate(
+              inventoryItem._id,
+              { $inc: { quantity: quantity }, lastUpdated: new Date() },
+              { session }
+            );
+          }
+        }
+      }
     }
 
     const updatedSlip = await Slip.findByIdAndUpdate(
@@ -290,6 +334,33 @@ router.put('/:id', async (req, res) => {
       updateData,
       { new: true, runValidators: true, session }
     );
+
+    // If products changed and slip is not cancelled, update income record
+    if (products && Array.isArray(products) && status !== 'Cancelled') {
+      const incomeUpdate = {
+        totalIncome: totalAmount || updatedSlip.totalAmount,
+        productsSold: products.map(p => ({
+          productName: p.productName || p.itemName,
+          quantity: p.quantity,
+          unitPrice: p.unitPrice ?? p.price,
+          totalPrice: p.totalPrice || (p.quantity * (p.unitPrice ?? p.price))
+        })),
+        customerName: customerName || updatedSlip.customerName,
+        paymentMethod: paymentMethod || updatedSlip.paymentMethod
+      };
+
+      await Income.updateMany(
+        { 
+          $or: [
+            { slipId: existingSlip._id },
+            { slipNumber: existingSlip.slipNumber }
+          ],
+          isActive: true
+        },
+        incomeUpdate,
+        { session }
+      );
+    }
 
     await session.commitTransaction();
     session.endSession();

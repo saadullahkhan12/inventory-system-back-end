@@ -149,4 +149,102 @@ router.get('/sales-trends', async (req, res) => {
   }
 });
 
+// GET /api/analytics/top-products - Get top selling products
+router.get('/top-products', async (req, res) => {
+  try {
+    const { limit = 10, period = 'all' } = req.query;
+    
+    let matchStage = { status: { $ne: 'Cancelled' } };
+    
+    if (period !== 'all') {
+      const days = period === 'week' ? 7 : period === 'month' ? 30 : 365;
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+      matchStage.createdAt = { $gte: startDate };
+    }
+
+    const topProducts = await Slip.aggregate([
+      { $match: matchStage },
+      { $unwind: '$products' },
+      {
+        $group: {
+          _id: '$products.productName',
+          totalQuantity: { $sum: '$products.quantity' },
+          totalRevenue: { $sum: '$products.totalPrice' },
+          transactionCount: { $sum: 1 }
+        }
+      },
+      { $sort: { totalQuantity: -1 } },
+      { $limit: parseInt(limit) }
+    ]);
+
+    res.json({
+      period,
+      topProducts,
+      message: 'Top products fetched successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error fetching top products:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch top products', 
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/analytics/inventory-levels - Get inventory stock levels
+router.get('/inventory-levels', async (req, res) => {
+  try {
+    const items = await Item.find({ isActive: true })
+      .select('name quantity price category')
+      .sort({ quantity: 1 })
+      .limit(50);
+
+    const stockLevels = {
+      outOfStock: items.filter(i => i.quantity === 0),
+      lowStock: items.filter(i => i.quantity > 0 && i.quantity <= 10),
+      inStock: items.filter(i => i.quantity > 10)
+    };
+
+    res.json({
+      stockLevels,
+      totalItems: items.length,
+      message: 'Inventory levels fetched successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error fetching inventory levels:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch inventory levels', 
+      details: error.message 
+    });
+  }
+});
+
+// GET /api/analytics/orders-by-status - Get orders grouped by status
+router.get('/orders-by-status', async (req, res) => {
+  try {
+    const ordersByStatus = await Slip.aggregate([
+      {
+        $group: {
+          _id: '$status',
+          count: { $sum: 1 },
+          totalRevenue: { $sum: '$totalAmount' }
+        }
+      },
+      { $sort: { count: -1 } }
+    ]);
+
+    res.json({
+      ordersByStatus,
+      message: 'Orders by status fetched successfully'
+    });
+  } catch (error) {
+    console.error('❌ Error fetching orders by status:', error);
+    res.status(500).json({ 
+      error: 'Failed to fetch orders by status', 
+      details: error.message 
+    });
+  }
+});
+
 module.exports = router;
