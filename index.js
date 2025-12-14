@@ -63,6 +63,7 @@ app.use('/api/items', require('./routes/items'));
 app.use('/api/income', require('./routes/income'));
 app.use('/api/slips', require('./routes/slips'));
 app.use('/api/analytics', require('./routes/analytics'));
+app.use('/api/history', require('./routes/history'));
 
 /* -----------------------------------------
    ✅ 404 Handler (MUST BE LAST)

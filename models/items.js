@@ -21,6 +21,18 @@ const ItemSchema = new mongoose.Schema({
     trim: true,
     index: true
   },
+  subcategory: {
+    type: String,
+    default: "",
+    trim: true,
+    index: true
+  },
+  company: {
+    type: String,
+    default: "",
+    trim: true,
+    index: true
+  },
   quantity: { 
     type: Number, 
     default: 0,

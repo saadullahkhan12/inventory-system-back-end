@@ -4,7 +4,10 @@ const ProductSchema = new mongoose.Schema({
   productName: { type: String, required: true, trim: true },
   quantity: { type: Number, required: true, min: 1 },
   unitPrice: { type: Number, required: true, min: 0 },
-  totalPrice: { type: Number, required: true, min: 0 }
+  totalPrice: { type: Number, required: true, min: 0 },
+  category: { type: String, trim: true, default: "" },
+  subcategory: { type: String, trim: true, default: "" },
+  company: { type: String, trim: true, default: "" }
 }, { _id: false });
 
 const SlipSchema = new mongoose.Schema({

@@ -112,7 +112,10 @@ router.post('/', async (req, res) => {
         productName: p.productName || p.itemName,
         quantity: p.quantity,
         unitPrice: p.unitPrice ?? p.price,
-        totalPrice: p.quantity * (p.unitPrice ?? p.price)
+        totalPrice: p.quantity * (p.unitPrice ?? p.price),
+        category: p.category || '',
+        subcategory: p.subcategory || '',
+        company: p.company || ''
       })),
       subtotal,
       totalAmount,
@@ -281,7 +284,10 @@ router.put('/:id', async (req, res) => {
         productName: p.productName || p.itemName,
         quantity: p.quantity,
         unitPrice: p.unitPrice ?? p.price,
-        totalPrice: p.totalPrice || (p.quantity * (p.unitPrice ?? p.price))
+        totalPrice: p.totalPrice || (p.quantity * (p.unitPrice ?? p.price)),
+        category: p.category || '',
+        subcategory: p.subcategory || '',
+        company: p.company || ''
       }));
     }
     if (status === 'Cancelled' && !existingSlip.cancelledAt) {
@@ -343,7 +349,10 @@ router.put('/:id', async (req, res) => {
           productName: p.productName || p.itemName,
           quantity: p.quantity,
           unitPrice: p.unitPrice ?? p.price,
-          totalPrice: p.totalPrice || (p.quantity * (p.unitPrice ?? p.price))
+          totalPrice: p.totalPrice || (p.quantity * (p.unitPrice ?? p.price)),
+          category: p.category || '',
+          subcategory: p.subcategory || '',
+          company: p.company || ''
         })),
         customerName: customerName || updatedSlip.customerName,
         paymentMethod: paymentMethod || updatedSlip.paymentMethod

@@ -29,6 +29,14 @@ const SoldProductSchema = new mongoose.Schema({
   category: {
     type: String,
     default: ''
+  },
+  subcategory: {
+    type: String,
+    default: ''
+  },
+  company: {
+    type: String,
+    default: ''
   }
 }, { _id: false });
 
